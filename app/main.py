@@ -8,7 +8,13 @@ from httpx import ReadTimeout
 import httpx
 import logging
 
-app = FastAPI()
+app = FastAPI(
+    title="Llama Chat API",
+    version="0.1.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 # ✅ CORS for frontend + API domains
 app.add_middleware(
@@ -42,19 +48,23 @@ mock_data = {
     ]
 }
 
+@app.get("/api/agents/health")
+def agents_health():
+    return {"status": "healthy"}
+
 @app.get("/")
 def root():
     return {"status": "🧠 Llama Chat API running"}
 
-@app.get("/chat/agents")
+@app.get("/api/chat/agents")
 def get_agents():
     return list(mock_data.keys())
 
-@app.get("/chat/messages/{agent}")
+@app.get("/api/chat/messages/{agent}")
 def get_messages(agent: str):
     return mock_data.get(agent, [])
 
-@app.post("/chat/send")
+@app.post("/api/chat/send")
 async def send_message(req: Request):
     data = await req.json()
     user_input = data.get("text")

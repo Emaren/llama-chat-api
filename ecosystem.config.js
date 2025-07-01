@@ -1,11 +1,15 @@
 module.exports = {
   apps: [
     {
-      name: "llama-chat-api",
-      script: "./venv/bin/uvicorn",
-      args: "app.main:app --host 0.0.0.0 --port 8006",
-      cwd: "/var/www/llama-chat-api",
-      interpreter: "none"
-    }
-  ]
-}
+      name: 'llama-api',
+      cwd: '/var/www/llama-chat-api',
+      script: 'uvicorn',
+      args: 'app.main:app --host 127.0.0.1 --port 8002',
+      interpreter: 'python3',
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
+  ],
+};
