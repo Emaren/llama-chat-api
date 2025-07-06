@@ -3,7 +3,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from llama3_router import router as llama3_router
+from app.llama3_router import router as llama3_router
 from httpx import ReadTimeout
 import httpx
 import logging
@@ -16,7 +16,7 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# ✅ CORS for frontend + API domains
+# ✅ CORS config for frontend + API domains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -29,11 +29,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Route passthrough for /chat/llama3 etc.
-app.include_router(llama3_router)
+# ✅ Mount Llama3 chat endpoint under /llama3 (for direct NGINX routing)
+app.include_router(llama3_router, prefix="/llama3")
 
-# ✅ Preloaded mock history
+# ✅ Also mount legacy-compatible API endpoint at /api/chat
+app.include_router(llama3_router, prefix="/api/chat")
+
+# ✅ Mock conversation memory for system boot
 mock_data = {
+    "LlamaAgent38BQ4KM": [],
     "Redlinekey": [
         {"from": "Redlinekey", "text": "Brakes done. Hubs torqued."},
         {"from": "me", "text": "Copy that. Syncing task."},
@@ -47,6 +51,8 @@ mock_data = {
         {"from": "me", "text": "Hashrate trending stable?"},
     ]
 }
+
+from app.agent_models import model_routes
 
 @app.get("/api/agents/health")
 def agents_health():
@@ -72,8 +78,10 @@ async def send_message(req: Request):
 
     logging.info(f"🚨 USER: {user_input}")
 
+    model = model_routes.get(agent, "llama3")
+
     payload = {
-        "model": "llama3",
+        "model": model,
         "messages": [{"role": "user", "content": user_input}],
         "stream": False
     }
@@ -85,7 +93,7 @@ async def send_message(req: Request):
             output = res.json()
             reply = output["message"]["content"]
             logging.info(f"📦 RESPONSE: {reply}")
-            return { "from": agent, "text": reply }
+            return {"from": agent, "text": reply}
 
     except ReadTimeout:
         logging.warning("⏰ TIMEOUT talking to Ollama backend")

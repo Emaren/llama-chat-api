@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Pass every CLI argument straight through to Ollama
+exec ollama run llama3:8b-instruct-q4_K_M "$@"
