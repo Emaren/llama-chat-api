@@ -1,22 +1,22 @@
+// /var/www/llama-chat-api/ecosystem.config.js
 module.exports = {
   apps: [
     {
-      /* FastAPI → Ollama gateway */
-      name: "llama-api",
+      /* FastAPI gateway for the chat stack */
+      name: "llama-chat-api",
       cwd: "/var/www/llama-chat-api",
 
-      /* use the Uvicorn binary from the venv */
+      /* Call the venv’s Uvicorn launcher directly */
       script: "venv/bin/uvicorn",
+      args: "app.main:app --host 127.0.0.1 --port 8006",
 
-      /* IMPORTANT: app.main (not just main) to reflect app/main.py */
-      args: "app.main:app --host 127.0.0.1 --port 8002",
-
-      /* use the Python interpreter from the venv */
-      interpreter: "./venv/bin/python",
-
+      /* Tell PM2 this is a stand-alone binary */
+      interpreter: "none",        // <— critical line
       exec_mode: "fork",
+
       env: {
-        PYTHONUNBUFFERED: "1"
+        PYTHONUNBUFFERED: "1",
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       }
     }
   ]
