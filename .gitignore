@@ -1,0 +1,16 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environments
+venv/
+ENV/
+env/
+
+# Mac OS clutter
+.DS_Store
+
+# VSCode config
+.vscode/
