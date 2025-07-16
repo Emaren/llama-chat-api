@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../llama-api"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../llama-chat-app"
+		},
+		{
+			"path": "../../llama-dashboard"
+		}
+	]
+}

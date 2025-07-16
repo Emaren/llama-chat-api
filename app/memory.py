@@ -18,3 +18,8 @@ def save_memory(agent_name, history):
     path = memory_path(agent_name)
     with open(path, 'w') as f:
         json.dump(history, f)
+
+def trim_history(history):
+    MAX_HISTORY_CHARS = 96_000
+    while sum(len(m["content"]) for m in history) > MAX_HISTORY_CHARS and len(history) > 2:
+        history.pop(1)

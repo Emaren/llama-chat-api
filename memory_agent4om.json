@@ -1,0 +1,38 @@
+[
+  {
+    "timestamp": "2025-07-06T21:08:45.606013",
+    "message": "Hi"
+  },
+  {
+    "timestamp": "2025-07-06T21:09:08.309706",
+    "message": "Who are you?"
+  },
+  {
+    "timestamp": "2025-07-06T21:20:28.086188",
+    "message": "Hi"
+  },
+  {
+    "timestamp": "2025-07-06T21:21:43.350630",
+    "message": "Hello"
+  },
+  {
+    "timestamp": "2025-07-06T21:23:04.008474",
+    "message": "Hello"
+  },
+  {
+    "timestamp": "2025-07-06T21:53:49.762325",
+    "message": "Hello"
+  },
+  {
+    "timestamp": "2025-07-06T21:54:01.023553",
+    "message": "What's my name?"
+  },
+  {
+    "timestamp": "2025-07-06T21:54:31.860557",
+    "message": "Sweet. Nice to meet you, what is your name?"
+  },
+  {
+    "timestamp": "2025-07-06T21:59:46.331932",
+    "message": "Hello"
+  }
+]
