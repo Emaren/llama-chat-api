@@ -14,3 +14,4 @@ env/
 
 # VSCode config
 .vscode/
+.env

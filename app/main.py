@@ -11,6 +11,10 @@ from __future__ import annotations
 import os, sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 # make "app.*" importable when cwd ≠ repo root
 BASE_DIR = os.path.dirname(__file__)
@@ -28,7 +32,9 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# ── CORS (open for dev) ────────────────────────────────────────────
+# ── CORS using FRONTEND_ORIGIN ─────────────────────────────────────
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3006")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -55,4 +61,3 @@ app.add_api_route(
     methods=["GET"],
     tags=["chat"]
 )
-
