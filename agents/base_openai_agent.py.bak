@@ -1,0 +1,48 @@
+# agents/base_openai_agent.py
+from langchain.chat_models import ChatOpenAI
+from openai import AsyncOpenAI                     # NEW
+from typing import AsyncIterator                   # NEW
+
+class _PromptManagedLLM:                           # NEW
+    """
+    Tiny adapter that talks to the Prompt-Management
+    `/responses` endpoint but looks like a LangChain LLM
+    (exposes __call__ and astream).
+    """
+    def __init__(self, prompt_id: str, prompt_version: str | None = None):
+        self._prompt = {"id": prompt_id}
+        if prompt_version:
+            self._prompt["version"] = prompt_version
+        self._client = AsyncOpenAI()
+
+    async def astream(self, user_text: str) -> AsyncIterator[str]:
+        stream = await self._client.responses.create(
+            prompt=self._prompt, input=user_text, stream=True
+        )
+        async for chunk in stream:
+            yield chunk.choices[0].delta.get("content", "")
+
+    async def __call__(self, user_text: str) -> str:
+        pieces = []
+        async for part in self.astream(user_text):
+            pieces.append(part)
+        return "".join(pieces)
+
+
+class OpenAIAgent:
+    def __init__(self, **kwargs):
+        self.model = getattr(self, "model", "gpt-4o")   # fallback if not subclassed
+
+        # ──▶ **NEW BRANCH**: if subclass defines `prompt_id`, use PM API
+        if hasattr(self, "prompt_id"):
+            prompt_version = getattr(self, "prompt_version", None)
+            self.llm = _PromptManagedLLM(self.prompt_id, prompt_version)
+            print(f"[Agent Init] Using OpenAI Prompt-Management id={self.prompt_id}")
+        else:
+            self.llm = ChatOpenAI(                       # unchanged path
+                model_name=self.model,
+                temperature=0.7,
+                streaming=True,
+                **kwargs
+            )
+            print(f"[Agent Init] Using vanilla model={self.model}")

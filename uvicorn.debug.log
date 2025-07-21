@@ -1,0 +1,8 @@
+INFO:     Will watch for changes in these directories: ['/Users/tonyblum/projects/llama-chat-api']
+INFO:     Uvicorn running on http://127.0.0.1:8006 (Press CTRL+C to quit)
+INFO:     Started reloader process [45998] using StatReload
+INFO:     Started server process [46002]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[debug] Agent4oMP → injecting master prompt <prompt:pmpt_686c1e1b9ebc8193bf38bfc6033cb505002fc222d55d36df:9>
+INFO:     127.0.0.1:50997 - "POST /api/chat/send HTTP/1.1" 200 OK

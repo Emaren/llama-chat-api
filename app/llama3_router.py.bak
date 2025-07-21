@@ -4,30 +4,27 @@ llama3_router.py — FastAPI ↔ LLM bridge (Ollama / OpenAI)
 Works with openai-py ≥ 1.9 (no prompt= arg)
 • master prompt injected as first system msg
 • persona injection & JSON memory
-• SSE streaming intact (via Prompt-Mgmt)
+• SSE streaming intact
 • dashboard token callback
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import os
+import asyncio, json, os
 from importlib import import_module
 from typing import AsyncGenerator, Dict, List, Optional
 
-import httpx
-import tiktoken
+import httpx, tiktoken
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.agent_models import model_routes
-from app.loadouts     import LOADOUTS
-from app.memory       import load_memory, save_memory, trim_history
+from app.loadouts import LOADOUTS
+from app.memory import load_memory, save_memory, trim_history
 from agents.chat_engine import handle_chat
 
 # ─────────────────── config / constants ────────────────────
-OLLAMA_URL     = os.getenv("OLLAMA_URL",    "http://localhost:11434/api/chat")
-DASH_API_URL   = os.getenv("DASH_API_URL",  "http://localhost:8005")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
+DASH_API_URL = os.getenv("DASH_API_URL", "http://localhost:8005")
 EXCLUDE_MEMORY = {"LlamaBear", "Agent4o"}
 
 router = APIRouter()
@@ -40,6 +37,7 @@ def _count_tokens(txt: str, model: str) -> int:
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(txt or ""))
 
+
 async def _push_usage(p: int, c: int, model: str, usd: float):
     try:
         async with httpx.AsyncClient(timeout=3) as c_:
@@ -48,13 +46,12 @@ async def _push_usage(p: int, c: int, model: str, usd: float):
                 json={
                     "prompt_tokens": p,
                     "completion_tokens": c,
-                    "model_name":     model,
-                    "cost_usd":       round(usd, 6),
+                    "model_name": model,
+                    "cost_usd": round(usd, 6),
                 },
             )
     except Exception as e:
         print("⚠️  push_usage failed:", e)
-
 
 # ─────────── back-end stream adapters ────────────
 async def _openai_stream(payload: dict) -> AsyncGenerator[str, None]:
@@ -63,30 +60,22 @@ async def _openai_stream(payload: dict) -> AsyncGenerator[str, None]:
 
     client = openai.AsyncOpenAI()
     try:
-        # parse out "<prompt:id:ver>"
+        # Prompt-Mgmt streaming call
         prompt_tag = payload["messages"][0]["content"]
-        _, prompt_id, prompt_ver = prompt_tag.strip("<>").split(":")
+        prompt_id = prompt_tag.split(":")[1]
+        prompt_ver = prompt_tag.split(":")[2].rstrip(">")
         stream = await client.responses.create(
-            prompt  = {"id": prompt_id, "version": prompt_ver},
-            input   = payload["messages"][-1]["content"],
-            stream  = True,
+            prompt={"id": prompt_id, "version": prompt_ver},
+            input=payload["messages"][-1]["content"],
+            stream=True,
         )
-
-        async for ev in stream:
-            # Each Prompt-Mgmt stream event now has `.text`
-            text = getattr(ev, "text", None)
-            if text is not None:
-                yield text
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
             await asyncio.sleep(0)
-
     except OpenAIError as e:
-        # map to 502 so the UI sees an error and closes
         raise HTTPException(502, f"OpenAI error: {e}") from e
-
-    except Exception as e:
-        # catch anything else and terminate cleanly
-        print("⚠️ unexpected error in _openai_stream:", e)
-        raise HTTPException(500, "internal stream error") from e
 
 
 async def _ollama_stream(payload: dict) -> AsyncGenerator[str, None]:
@@ -100,7 +89,6 @@ async def _ollama_stream(payload: dict) -> AsyncGenerator[str, None]:
                 except Exception:
                     print("⚠️  bad Ollama chunk:", raw[:100])
 
-
 # ─────────── loadouts / personas ───────────
 def _resolve(agent: str):
     if agent in LOADOUTS:
@@ -108,10 +96,10 @@ def _resolve(agent: str):
         return ld["persona"], model_routes.get(ld["model"], ld["model"])
     return agent, model_routes.get(agent, agent)
 
-
 # ───────────────────────── endpoints ────────────────────────
 @router.get("/agents")
 async def agents():
+    """Return list of available agents."""
     return sorted(model_routes.keys())
 
 
@@ -120,9 +108,9 @@ async def history(agent: str, limit: int = 50):
     raw = load_memory(agent)[-limit:]
     return [
         {"from": "me" if m["role"] == "user" else agent, "text": m["content"].strip()}
-        for m in raw if m.get("content")
+        for m in raw
+        if m.get("content")
     ]
-
 
 # ───────────────────────── main /send ───────────────────────
 @router.post("/send")
@@ -134,6 +122,7 @@ async def chat(req: Request):
     # 1️⃣ validate + resolve agent/model
     if agent not in model_routes:
         raise HTTPException(400, f"invalid agent {agent}")
+
     persona, model_alias = _resolve(agent)
     is_openai            = model_alias.startswith("openai:")
     model                = model_alias.split(":", 1)[1] if is_openai else model_alias
@@ -157,7 +146,7 @@ async def chat(req: Request):
         core_cls = getattr(core_mod, agent.replace(".", "_"))
         pid      = getattr(core_cls, "prompt_id", None)
         if pid:
-            ver            = str(getattr(core_cls, "prompt_version", "1"))
+            ver           = str(getattr(core_cls, "prompt_version", "1"))
             sys_prompt_txt = f"<prompt:{pid}:{ver}>"
             print(f"[debug] {agent} → injecting master prompt {sys_prompt_txt}")
     except Exception:
@@ -205,7 +194,6 @@ async def chat(req: Request):
             except HTTPException as e:
                 yield f"data: {json.dumps({'error': str(e.detail), 'done': True})}\n\n".encode()
                 return
-            # close out
             yield b'data: {"done": true}\n\n'
             await _finalise("".join(buf))
 
@@ -222,19 +210,24 @@ async def chat(req: Request):
             import openai
             client     = openai.AsyncOpenAI()
             prompt_tag = payload["messages"][0]["content"]
-            _, prompt_id, prompt_ver = prompt_tag.strip("<>").split(":")
-            resp = await client.responses.create(
+            prompt_id  = prompt_tag.split(":")[1]
+            prompt_ver = prompt_tag.split(":")[2].rstrip(">")
+            resp       = await client.responses.create(
                 prompt={"id": prompt_id, "version": prompt_ver},
                 input=payload["messages"][-1]["content"],
                 stream=False,
             )
-            parts.append(resp.output[0].content[0].text)
+            # extract assistant text
+            assistant_text = resp.output[0].content[0].text
+            parts.append(assistant_text)
         else:
             async for ch in backend(payload):
                 if ch.strip():
                     parts.append(ch)
     except HTTPException as e:
-        return JSONResponse(status_code=e.status_code, content={"from": agent, "error": e.detail})
+        return JSONResponse(
+            status_code=e.status_code, content={"from": agent, "error": e.detail}
+        )
 
     reply = "".join(parts)
     await _finalise(reply)

@@ -13,5 +13,10 @@ LOADOUTS = {
         "tools": ["llama_context_snapshot.txt", "loadouts.py", "llama-chat-api", "llama-chat-app"],
         "description": "Tony’s immortal right hand for dev, ops, and memory continuity."
     },
-    # Add more here…
+    "Agent4oMP": {
+        "persona": "Agent4oMP",           # ↩︎ any prompt/persona tag you want
+        "model":   "openai:gpt-4o",  # ↩︎ **openai:** prefix is the key!
+        "tools":   [],                    # or tools the agent may call
+        "description": "Primary OpenAI-powered dev assistant",
+    },
 }
