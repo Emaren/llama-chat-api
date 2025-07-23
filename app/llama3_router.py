@@ -17,13 +17,17 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 import httpx
 import tiktoken
-from fastapi import APIRouter, HTTPException, Request
+from utils.token_estimator import num_tokens_from_messages
+from fastapi import APIRouter, HTTPException, Request, Body
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.agent_models import model_routes
 from app.loadouts     import LOADOUTS
 from app.memory       import load_memory, save_memory, trim_history
-from agents.chat_engine import handle_chat
+from app.util.chat_helpers import handle_chat
+from openai import OpenAI
+
+client = OpenAI()
 
 # ─────────────────── config / constants ────────────────────
 OLLAMA_URL     = os.getenv("OLLAMA_URL",    "http://localhost:11434/api/chat")
@@ -63,7 +67,6 @@ async def _openai_stream(payload: dict) -> AsyncGenerator[str, None]:
 
     client = openai.AsyncOpenAI()
     try:
-        # parse out "<prompt:id:ver>"
         prompt_tag = payload["messages"][0]["content"]
         _, prompt_id, prompt_ver = prompt_tag.strip("<>").split(":")
         stream = await client.responses.create(
@@ -73,18 +76,14 @@ async def _openai_stream(payload: dict) -> AsyncGenerator[str, None]:
         )
 
         async for ev in stream:
-            # Each Prompt-Mgmt stream event now has `.text`
             text = getattr(ev, "text", None)
             if text is not None:
                 yield text
             await asyncio.sleep(0)
 
     except OpenAIError as e:
-        # map to 502 so the UI sees an error and closes
         raise HTTPException(502, f"OpenAI error: {e}") from e
-
     except Exception as e:
-        # catch anything else and terminate cleanly
         print("⚠️ unexpected error in _openai_stream:", e)
         raise HTTPException(500, "internal stream error") from e
 
@@ -114,6 +113,17 @@ def _resolve(agent: str):
 async def agents():
     return sorted(model_routes.keys())
 
+@router.get("/version/{agent}")
+async def get_version(agent: str):
+    try:
+        mod_name = f"agents.{agent.lower().replace('.', '_')}_core"
+        core_mod = import_module(mod_name)
+        core_cls = getattr(core_mod, agent.replace(".", "_"))
+        pid = getattr(core_cls, "prompt_id", None)
+        ver = getattr(core_cls, "prompt_version", None)
+        return {"id": pid, "version": ver}
+    except Exception:
+        raise HTTPException(404, f"Agent {agent} not found or missing version")
 
 @router.get("/messages/{agent}")
 async def history(agent: str, limit: int = 50):
@@ -123,7 +133,6 @@ async def history(agent: str, limit: int = 50):
         for m in raw if m.get("content")
     ]
 
-
 # ───────────────────────── main /send ───────────────────────
 @router.post("/send")
 async def chat(req: Request):
@@ -131,7 +140,6 @@ async def chat(req: Request):
     want_stream = bool(body.get("stream"))
     agent       = (body.get("to") or "").strip()
 
-    # 1️⃣ validate + resolve agent/model
     if agent not in model_routes:
         raise HTTPException(400, f"invalid agent {agent}")
     persona, model_alias = _resolve(agent)
@@ -139,7 +147,6 @@ async def chat(req: Request):
     model                = model_alias.split(":", 1)[1] if is_openai else model_alias
     backend              = _openai_stream if is_openai else _ollama_stream
 
-    # 2️⃣ assemble messages
     if "messages" in body:
         messages  = body["messages"]
         user_text = messages[-1]["content"] if messages else ""
@@ -149,7 +156,6 @@ async def chat(req: Request):
             raise HTTPException(400, "missing text")
         messages = handle_chat(persona, user_text)
 
-    # 3️⃣ master-prompt injection
     sys_prompt_txt: Optional[str] = None
     try:
         mod_name = f"agents.{agent.lower().replace('.', '_')}_core"
@@ -163,19 +169,16 @@ async def chat(req: Request):
     except Exception:
         pass
 
-    # 4️⃣ ensure first message is system
     if sys_prompt_txt:
         if not messages or messages[0].get("content") != sys_prompt_txt:
             messages.insert(0, {"role": "system", "content": sys_prompt_txt})
     elif is_openai and (not messages or messages[0]["role"] != "system"):
         messages.insert(0, {"role": "system", "content": persona})
 
-    # 5️⃣ build payload
     payload: Dict = {"model": model, "messages": messages}
     if want_stream and not is_openai:
         payload["stream"] = True
 
-    # persist user → memory
     if agent not in EXCLUDE_MEMORY and user_text:
         mem = load_memory(agent)
         trim_history(mem)
@@ -193,7 +196,6 @@ async def chat(req: Request):
             c = _count_tokens(reply, model)
             asyncio.create_task(_push_usage(p, c, model, (p + c) / 1000 * 0.005))
 
-    # ── streaming path ──────────────────────────────────────────
     if want_stream:
         async def sse():
             buf: List[str] = []
@@ -205,7 +207,6 @@ async def chat(req: Request):
             except HTTPException as e:
                 yield f"data: {json.dumps({'error': str(e.detail), 'done': True})}\n\n".encode()
                 return
-            # close out
             yield b'data: {"done": true}\n\n'
             await _finalise("".join(buf))
 
@@ -215,7 +216,6 @@ async def chat(req: Request):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # ── blocking path ──────────────────────────────────────────
     parts: List[str] = []
     try:
         if is_openai:
@@ -239,3 +239,21 @@ async def chat(req: Request):
     reply = "".join(parts)
     await _finalise(reply)
     return {"from": agent, "text": reply}
+
+
+# ───────────────────────── token estimate ───────────────────────
+@router.post("/stats/last")
+async def estimate_tokens(payload: dict = Body(..., embed=True)):
+    try:
+        messages = payload["messages"]
+        model = payload.get("model", "gpt-4")
+        token_count = num_tokens_from_messages(messages, model=model)
+        return {
+            "model": model,
+            "prompt_tokens": token_count,
+            "completion_tokens": 0,
+            "total_tokens": token_count,
+            "cost_usd": round(token_count / 1000 * 0.01, 6),
+        }
+    except Exception as e:
+        raise HTTPException(400, detail=f"Token estimate failed: {e}")

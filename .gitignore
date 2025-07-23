@@ -15,3 +15,8 @@ env/
 # VSCode config
 .vscode/
 .env
+=======
+
+# Editor swap/backup files
+*.swp
+*~

@@ -2,16 +2,16 @@
 module.exports = {
   apps: [
     {
-      /* FastAPI gateway for the chat stack */
+      // FastAPI gateway for the chat stack
       name: "llama-chat-api",
       cwd: "/var/www/llama-chat-api",
 
-      /* Call the venv’s Uvicorn launcher directly */
+      // Use uvicorn from venv directly
       script: "venv/bin/uvicorn",
       args: "app.main:app --host 127.0.0.1 --port 8006",
 
-      /* Tell PM2 this is a stand-alone binary */
-      interpreter: "none",        // <— critical line
+      // Run as standalone binary
+      interpreter: "none",
       exec_mode: "fork",
 
       env: {

@@ -1,1 +1,1 @@
-[]
+[{"role": "user", "content": "Hello"}, {"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Tony.\n\nThread open. Full mission context enabled.  \nWhat\u2019s the current move? Which system or playbook are we driving today?"}]
