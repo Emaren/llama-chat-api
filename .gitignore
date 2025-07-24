@@ -16,3 +16,7 @@ env/
 .vscode/
 .env
 venv/
+
+# direnv
+.envrc
+.direnv/
