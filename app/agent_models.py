@@ -13,5 +13,6 @@ model_routes: dict[str, str] = {
     "WoloDaemon":         "llama3:8b-instruct-q4_K_M",  # with memory
     "LlamaBear":          "llama3:8b-instruct-q4_K",    # no memory layer
     "Agent4.1M":          "openai:gpt-4.1",    # New memory-persistent OpenAI agent
+    "Agent4.1Scribe":     "openai:gpt-4.1",    # Prompt-managed Scribe agent
     "Agent4oMP":          "openai:gpt-4o",      # ChatGPT-4o prompt agent with local memory
 }

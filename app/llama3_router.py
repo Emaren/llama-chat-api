@@ -40,6 +40,42 @@ def _count_tokens(txt: str, model: str) -> int:
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(txt or ""))
 
+
+def _build_openai_prompt_request(messages: List[Dict]) -> Dict:
+    req: Dict = {"input": ""}
+    instructions: List[str] = []
+    transcript: List[str] = []
+    prompt_tag_seen = False
+
+    for msg in messages:
+        role = (msg.get("role") or "").strip()
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+
+        if not prompt_tag_seen and role == "system":
+            prompt_tag_seen = True
+            if content.startswith("<prompt:") and content.endswith(">"):
+                parts = content.strip("<>").split(":")
+                if len(parts) == 3 and parts[1] and parts[2]:
+                    req["prompt"] = {"id": parts[1], "version": parts[2]}
+                    continue
+            instructions.append(content)
+            continue
+
+        if role == "system":
+            instructions.append(content)
+        elif role == "assistant":
+            transcript.append(f"Assistant: {content}")
+        else:
+            transcript.append(f"User: {content}")
+
+    if instructions:
+        req["instructions"] = "\n\n".join(instructions)
+    if transcript:
+        req["input"] = "\n".join(transcript)
+    return req
+
 async def _push_usage(p: int, c: int, model: str, usd: float):
     try:
         async with httpx.AsyncClient(timeout=3) as c_:
@@ -63,14 +99,11 @@ async def _openai_stream(payload: dict) -> AsyncGenerator[str, None]:
 
     client = openai.AsyncOpenAI()
     try:
-        # parse out "<prompt:id:ver>"
-        prompt_tag = payload["messages"][0]["content"]
-        _, prompt_id, prompt_ver = prompt_tag.strip("<>").split(":")
-        stream = await client.responses.create(
-            prompt  = {"id": prompt_id, "version": prompt_ver},
-            input   = payload["messages"][-1]["content"],
-            stream  = True,
-        )
+        openai_req = _build_openai_prompt_request(payload["messages"])
+        if "prompt" not in openai_req:
+            openai_req["model"] = payload["model"]
+        openai_req["stream"] = True
+        stream = await client.responses.create(**openai_req)
 
         async for ev in stream:
             # Each Prompt-Mgmt stream event now has `.text`
@@ -220,14 +253,12 @@ async def chat(req: Request):
     try:
         if is_openai:
             import openai
-            client     = openai.AsyncOpenAI()
-            prompt_tag = payload["messages"][0]["content"]
-            _, prompt_id, prompt_ver = prompt_tag.strip("<>").split(":")
-            resp = await client.responses.create(
-                prompt={"id": prompt_id, "version": prompt_ver},
-                input=payload["messages"][-1]["content"],
-                stream=False,
-            )
+            client = openai.AsyncOpenAI()
+            openai_req = _build_openai_prompt_request(payload["messages"])
+            if "prompt" not in openai_req:
+                openai_req["model"] = payload["model"]
+            openai_req["stream"] = False
+            resp = await client.responses.create(**openai_req)
             parts.append(resp.output[0].content[0].text)
         else:
             async for ch in backend(payload):
