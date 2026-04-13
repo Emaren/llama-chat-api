@@ -1,6 +1,6 @@
 # app/agent_models.py
 # ------------------------------------------------------------------
-# Map UI-agent names → Ollama/OpenAI model tags
+# Map UI-agent names -> Ollama/OpenAI model tags
 # ------------------------------------------------------------------
 
 model_routes: dict[str, str] = {
@@ -16,5 +16,12 @@ model_routes: dict[str, str] = {
     "Agent4.1Scribe":     "openai:gpt-4.1",             # Scribe lane
     "Agent4.1Grimer":     "openai:gpt-4.1",             # Grimer lane
     "Agent4.1Guy":        "openai:gpt-4.1",             # Guy of Moxica lane
+    "Agent4.1Doc":        "openai:gpt-4.1",             # Doc lane
+    "Agent4.1Leonidas":   "openai:gpt-4.1",             # Leonidas lane
+    "Agent4.1Don":        "openai:gpt-4.1",             # Don lane
+    "Agent4.1Han":        "openai:gpt-4.1",             # Han lane
+    "Agent4.1Bill":       "openai:gpt-4.1",             # Bill lane
+    "Agent4.1Sean":       "openai:gpt-4.1",             # Sean lane
+    "Agent4.1Joe":        "openai:gpt-4.1",             # Joe lane
     "Agent4oMP":          "openai:gpt-4o",              # ChatGPT-4o prompt agent with local memory
 }
