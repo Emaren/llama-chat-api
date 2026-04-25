@@ -41,6 +41,43 @@ def _count_tokens(txt: str, model: str) -> int:
     return len(enc.encode(txt or ""))
 
 
+def _sanitize_agent_reply(txt: str) -> str:
+    return (txt or "").replace("—", ",").replace("–", ",").strip()
+
+
+def _looks_like_prompt_metadata_question(txt: str) -> bool:
+    lower = (txt or "").lower()
+    needles = (
+        "what prompt",
+        "which prompt",
+        "prompt version",
+        "prompt v",
+        "prompt number",
+        "what model",
+        "which model",
+        "model are you",
+        "what version",
+    )
+    return any(needle in lower for needle in needles)
+
+
+def _format_agent_metadata_reply(
+    agent: str,
+    model: str,
+    prompt_id: Optional[str],
+    prompt_version: Optional[str],
+) -> str:
+    parts = [agent]
+    if prompt_version:
+        parts.append(f"prompt v{prompt_version}")
+    elif prompt_id:
+        parts.append("prompt version unknown")
+    parts.append(f"model {model}")
+    if prompt_id:
+        parts.append(f"prompt_id {prompt_id}")
+    return ", ".join(parts) + "."
+
+
 def _build_openai_prompt_request(messages: List[Dict]) -> Dict:
     req: Dict = {"input": ""}
     instructions: List[str] = []
@@ -184,15 +221,18 @@ async def chat(req: Request):
 
     # 3️⃣ master-prompt injection
     sys_prompt_txt: Optional[str] = None
+    prompt_id: Optional[str] = None
+    prompt_version: Optional[str] = None
     try:
         mod_name = f"agents.{agent.lower().replace('.', '_')}_core"
         core_mod = import_module(mod_name)
         core_cls = getattr(core_mod, agent.replace(".", "_"))
         pid      = getattr(core_cls, "prompt_id", None)
         if pid:
-            ver            = str(getattr(core_cls, "prompt_version", "1"))
-            sys_prompt_txt = f"<prompt:{pid}:{ver}>"
-            print(f"[debug] {agent} → injecting master prompt {sys_prompt_txt}")
+            prompt_id      = str(pid)
+            prompt_version = str(getattr(core_cls, "prompt_version", "1"))
+            sys_prompt_txt = f"<prompt:{prompt_id}:{prompt_version}>"
+            print(f"[debug] {agent} injecting master prompt {sys_prompt_txt}")
     except Exception:
         pass
 
@@ -226,6 +266,22 @@ async def chat(req: Request):
             c = _count_tokens(reply, model)
             asyncio.create_task(_push_usage(p, c, model, (p + c) / 1000 * 0.005))
 
+    if _looks_like_prompt_metadata_question(user_text):
+        reply = _sanitize_agent_reply(
+            _format_agent_metadata_reply(agent, model, prompt_id, prompt_version)
+        )
+        await _finalise(reply)
+        return {
+            "from": agent,
+            "text": reply,
+            "metadata": {
+                "agent": agent,
+                "model": model,
+                "prompt_id": prompt_id,
+                "prompt_version": prompt_version,
+            },
+        }
+
     # ── streaming path ──────────────────────────────────────────
     if want_stream:
         async def sse():
@@ -233,8 +289,9 @@ async def chat(req: Request):
             try:
                 async for ch in backend(payload):
                     if ch.strip():
-                        buf.append(ch)
-                        yield f"data: {json.dumps({'data': ch, 'done': False})}\n\n".encode()
+                        clean_ch = ch.replace("—", ",").replace("–", ",")
+                        buf.append(clean_ch)
+                        yield f"data: {json.dumps({'data': clean_ch, 'done': False})}\n\n".encode()
             except HTTPException as e:
                 yield f"data: {json.dumps({'error': str(e.detail), 'done': True})}\n\n".encode()
                 return
@@ -267,6 +324,6 @@ async def chat(req: Request):
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"from": agent, "error": e.detail})
 
-    reply = "".join(parts)
+    reply = _sanitize_agent_reply("".join(parts))
     await _finalise(reply)
     return {"from": agent, "text": reply}
